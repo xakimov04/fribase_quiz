@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "940343374830",
+    "project_id": "lesson66-bdbda",
+    "storage_bucket": "lesson66-bdbda.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:940343374830:android:545f050358987bfb0814ff",
+        "android_client_info": {
+          "package_name": "com.example.fribase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDpjwI8amGXzURgwCbZ7eYsmqyW0jfqo2I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
