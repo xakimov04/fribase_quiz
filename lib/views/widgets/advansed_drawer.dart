@@ -1,8 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fribase/views/screens/admin_panel.dart';
 import 'package:fribase/views/screens/home_screen.dart';
+import 'package:fribase/views/screens/login_screen.dart';
 import 'package:gap/gap.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CustomDrawer extends StatefulWidget {
   const CustomDrawer({super.key});
@@ -12,6 +16,42 @@ class CustomDrawer extends StatefulWidget {
 }
 
 class _CustomDrawerState extends State<CustomDrawer> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  String? _userName;
+  String? _userUID;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserDetails();
+  }
+
+  Future<void> _loadUserDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+    _userUID = prefs.getString('uid');
+    if (_userUID != null) {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_userUID)
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          _userName = userDoc['name'];
+        });
+      }
+    }
+  }
+
+  Future<void> logout() async {
+    await _auth.signOut();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const LoginPage(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -24,6 +64,15 @@ class _CustomDrawerState extends State<CustomDrawer> {
             children: [
               _buildProfileImage(),
               const Gap(20),
+              if (_userName != null)
+                Text(
+                  _userName!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               const Gap(50),
               _buildDrawerItem(Icons.grid_view, 'Home', () {
                 Navigator.pushReplacement(
@@ -42,6 +91,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
                   ),
                 );
               }),
+              _buildDrawerItem(Icons.login_rounded, 'Log out', logout),
               const Spacer(),
               const Text(
                 "Good",
@@ -116,7 +166,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
               title,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 25,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),

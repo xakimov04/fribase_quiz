@@ -1,11 +1,15 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:fribase/controllers/quiz_controller.dart';
-import 'package:fribase/controllers/select_controller.dart';
-import 'package:fribase/models/quiz_model.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
-class QuizCart extends StatelessWidget {
+import 'package:fribase/controllers/quiz_controller.dart';
+import 'package:fribase/controllers/select_controller.dart';
+import 'package:fribase/models/quiz_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class QuizCart extends StatefulWidget {
   final int index;
   final Quiz quiz;
   final PageController pageController;
@@ -20,6 +24,11 @@ class QuizCart extends StatelessWidget {
   });
 
   @override
+  State<QuizCart> createState() => _QuizCartState();
+}
+
+class _QuizCartState extends State<QuizCart> {
+  @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
@@ -28,7 +37,7 @@ class QuizCart extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildQuestion(),
+            _QuestionText(question: widget.quiz.question),
             const Gap(20),
             ..._buildOptions(context),
           ],
@@ -37,9 +46,31 @@ class QuizCart extends StatelessWidget {
     );
   }
 
-  Widget _buildQuestion() {
+  List<Widget> _buildOptions(BuildContext context) {
+    return widget.quiz.options.asMap().entries.map((entry) {
+      final optionIndex = entry.key;
+      final option = entry.value;
+
+      return _OptionItem(
+        index: optionIndex,
+        quiz: widget.quiz,
+        option: option,
+        pageController: widget.pageController,
+        onLastQuestionAnswered: widget.onLastQuestionAnswered,
+      );
+    }).toList();
+  }
+}
+
+class _QuestionText extends StatelessWidget {
+  final String question;
+
+  const _QuestionText({required this.question});
+
+  @override
+  Widget build(BuildContext context) {
     return Text(
-      quiz.question,
+      question,
       style: const TextStyle(
         color: Colors.white,
         fontSize: 30,
@@ -47,24 +78,9 @@ class QuizCart extends StatelessWidget {
       ),
     );
   }
-
-  List<Widget> _buildOptions(BuildContext context) {
-    return quiz.options.asMap().entries.map((entry) {
-      final optionIndex = entry.key;
-      final option = entry.value;
-
-      return _OptionItem(
-        index: optionIndex,
-        quiz: quiz,
-        option: option,
-        pageController: pageController,
-        onLastQuestionAnswered: onLastQuestionAnswered,
-      );
-    }).toList();
-  }
 }
 
-class _OptionItem extends StatelessWidget {
+class _OptionItem extends StatefulWidget {
   final int index;
   final Quiz quiz;
   final String option;
@@ -80,20 +96,63 @@ class _OptionItem extends StatelessWidget {
   });
 
   @override
+  State<_OptionItem> createState() => _OptionItemState();
+}
+
+class _OptionItemState extends State<_OptionItem> {
+  String? _userName;
+  String? _userUID;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserDetails();
+  }
+
+  Future<void> _loadUserDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+    _userUID = prefs.getString('uid');
+    if (_userUID != null) {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_userUID)
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          _userName = userDoc['name'];
+        });
+      }
+    }
+  }
+
+  void _saveResult(int score) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('leaderboard').add({
+        'userId': user.uid,
+        'userName': _userName,
+        'score': score,
+        'timestamp': Timestamp.now(),
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isSelected =
-        context.watch<SelectedOptionsNotifier>().selectedOptions[index] ==
-            option;
-    final isCorrect = index == quiz.correct;
+        context.watch<SelectedOptionsNotifier>().selectedOptions[widget.index] ==
+            widget.option;
+    final isCorrect = widget.index == widget.quiz.correct;
 
     return GestureDetector(
       onTap: () async {
         final selectedOptionsNotifier = context.read<SelectedOptionsNotifier>();
-        selectedOptionsNotifier.selectOption(index, option, isCorrect);
-        if (onLastQuestionAnswered != null) {
-          onLastQuestionAnswered!();
+        selectedOptionsNotifier.selectOption(widget.index, widget.option, isCorrect);
+        if (widget.onLastQuestionAnswered != null) {
+          widget.onLastQuestionAnswered!();
+          _saveResult(selectedOptionsNotifier.count);
         } else {
-          pageController.nextPage(
+          widget.pageController.nextPage(
             duration: const Duration(seconds: 1),
             curve: Curves.easeInOut,
           );
@@ -105,7 +164,7 @@ class _OptionItem extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: _optionDecoration(isSelected),
         child: Text(
-          option,
+          widget.option,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 20,

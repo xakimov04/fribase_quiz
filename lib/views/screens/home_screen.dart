@@ -1,8 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_advanced_drawer/flutter_advanced_drawer.dart';
 import 'package:fribase/controllers/quiz_controller.dart';
 import 'package:fribase/controllers/select_controller.dart';
 import 'package:fribase/models/quiz_model.dart';
+import 'package:fribase/views/screens/result_screen.dart';
 import 'package:fribase/views/widgets/advansed_drawer.dart';
 import 'package:fribase/views/widgets/quiz_cart.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +19,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final PageController _pageController = PageController();
+  final AdvancedDrawerController _advancedDrawerController =
+      AdvancedDrawerController();
   int _totalPages = 0;
 
   @override
@@ -25,6 +30,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showCompletionDialog() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showErrorDialog('User not logged in.');
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -35,14 +46,14 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(15),
             ),
             title: const Text(
-              "Quiz tugadi",
+              "Quiz Completed",
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.blueAccent,
               ),
             ),
             content: Text(
-              "Siz ${selectedOptions.count} tasiga javob berdingiz.",
+              "You answered ${selectedOptions.count} questions.",
               style: TextStyle(fontSize: 16),
             ),
             actions: <Widget>[
@@ -51,17 +62,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.of(context).pop();
                 },
                 child: const Text(
-                  "Bekor qilish",
+                  "Cancel",
                   style: TextStyle(color: Colors.redAccent),
                 ),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
-                  _retryQuiz();
+                  _retryQuiz(user.uid, selectedOptions.count);
                 },
                 child: const Text(
-                  "Qayta o'ynash",
+                  "Retry",
                   style: TextStyle(color: Colors.green),
                 ),
               ),
@@ -72,12 +83,57 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _retryQuiz() {
+  Future<void> _saveResults(String uid, int correctAnswers) async {
+    final resultsCollection = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('results');
+    await resultsCollection.add({
+      'correctAnswers': correctAnswers,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  void _retryQuiz(String uid, int correctAnswers) {
+    _saveResults(uid, correctAnswers); // Save results before resetting
     _pageController.jumpToPage(0);
     context.read<SelectedOptionsNotifier>().clearSelections();
   }
 
-  final _advancedDrawerController = AdvancedDrawerController();
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xff041955),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(25),
+        ),
+        title: const Text(
+          "Error",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(
+            color: Colors.white70,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              "OK",
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _handleMenuButtonPressed() {
     _advancedDrawerController.showDrawer();
   }
@@ -96,9 +152,10 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: const CustomDrawer(),
       child: Stack(
         children: [
+          _buildBackground(),
           Scaffold(
-            backgroundColor: const Color(0xff969EF3),
-            floatingActionButton: _buildFloatingActionButtons(_pageController),
+            backgroundColor: Colors.transparent,
+            floatingActionButton: _buildFloatingActionButtons(),
             body: Consumer<QuizController>(
               builder: (context, quizController, child) {
                 return StreamBuilder(
@@ -111,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                     if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                       return const Center(
-                        child: Text("Savollar mavjud emas"),
+                        child: Text("No questions available"),
                       );
                     }
                     final quiz = snapshot.data!.docs;
@@ -121,10 +178,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       scrollDirection: Axis.vertical,
                       itemCount: quiz.length,
                       itemBuilder: (context, index) {
-                        final quizs = Quiz.fromJson(quiz[index]);
+                        final quizItem = Quiz.fromJson(quiz[index]);
                         return QuizCart(
                           index: index,
-                          quiz: quizs,
+                          quiz: quizItem,
                           pageController: _pageController,
                           onLastQuestionAnswered: index == quiz.length - 1
                               ? _showCompletionDialog
@@ -137,31 +194,68 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ),
-          Positioned(
-            top: 50,
-            left: 15,
-            child: GestureDetector(
-              onTap: _handleMenuButtonPressed,
-              child: CircleAvatar(
-                backgroundImage: AssetImage("assets/icons/logo.gif"),
-                radius: 25,
-              ),
-            ),
-          ),
+          _buildMenuButton(),
+          _buildResultsButton(),
         ],
       ),
     );
   }
 
-  Widget _buildFloatingActionButtons(
-    PageController controller,
-  ) {
+  Widget _buildBackground() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomLeft,
+          end: Alignment.topRight,
+          colors: [
+            Color(0xff969EF3),
+            Color(0xff041955),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuButton() {
+    return Positioned(
+      top: 50,
+      left: 15,
+      child: GestureDetector(
+        onTap: _handleMenuButtonPressed,
+        child: const CircleAvatar(
+          backgroundImage: AssetImage("assets/icons/logo.gif"),
+          radius: 25,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultsButton() {
+    return Positioned(
+      top: 50,
+      right: 15,
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const LeaderboardScreen()),
+          );
+        },
+        child: const CircleAvatar(
+          backgroundImage: AssetImage("assets/icons/lead.png"),
+          radius: 25,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingActionButtons() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         IconButton(
           onPressed: () {
-            controller.previousPage(
+            _pageController.previousPage(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeInOut,
             );
@@ -174,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         IconButton(
           onPressed: () {
-            controller.nextPage(
+            _pageController.nextPage(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeInOut,
             );
